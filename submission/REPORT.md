@@ -1,4 +1,4 @@
-# Báo cáo Day 09 — Nguyễn Xuân Lâm, 2A202604051
+# Báo cáo Day 09 — Nguyễn Xuân Lam, 2A202604051
 
 > Mọi số liệu lấy từ `submission/reports/` (lần chạy `python -m pipeline.run` với `phash_dist=12`, `second_opinion.conf=0.6`) và `submission/calibration/`.
 
@@ -57,3 +57,9 @@ Sweep trên `data/calib/` (39 ảnh, có đáp án `MANIFEST.csv`), file `submis
 - *Prompt chính:* đưa repo lab cho AI đọc và yêu cầu viết 4 module theo đúng docstring trong stub + test tương ứng; yêu cầu phân tích bảng sweep để chọn 2 ngưỡng.
 - *Cách kiểm:* đọc từng dòng (code có chú thích tiếng Việt), chạy `python -m pytest -q` → **79 passed**; chạy `pipeline.run` rồi đối chiếu `03_fixes.csv` (trước → sau) và mở xem các cặp ảnh bị cờ trùng.
 - *Một lần AI sai:* khi dò nhiều cặp ngưỡng, AI viết tên thư mục kết quả là `work/r_$pd_$c` — shell hiểu `$pd_` là một biến khác (rỗng), nên các lần chạy với `phash_dist` khác nhau ghi đè lên cùng thư mục; phải sửa thành `${pd}` và chạy lại để có số liệu đúng.
+
+## Thưởng: check mới `aspect_ratio` (+3)
+- **Module** `pipeline/checks/aspect_ratio.py` + **test** `tests/test_aspect_ratio.py` (6 test, xanh). Cảnh báo `BOX_EXTREME_ASPECT` khi tỉ lệ rộng/cao **tính theo pixel** lệch quá `max_ratio = 8` lần (quá dẹt hoặc quá mảnh). Ngưỡng đọc từ `cfg["aspect_ratio"]` nếu có, mặc định 8 — chọn trên nhãn người `gold_val`: 157/158 box lệch ≤ 8 (không dùng `test`).
+- Vì `pipeline/checks/__init__.py` và `configs/pipeline.yaml` là file bị khoá, check **chạy độc lập**, không nằm trong `QC_CHECKS`: `python -m pipeline.checks.aspect_ratio <thư mục dataset> <file csv>`.
+- **Kết quả:** `data/raw`: 3 box ở 3 ảnh (`img_0042`, `img_0076`, `img_0155`, đều là person rộng/cao ≈ 0,10). Sau pipeline (`work/run/ds`, 202 ảnh): 2 box — `img_0042` dòng 5 (person, 0,10) và `img_0124` dòng 6 (car, 9,11; box do người duyệt gán). Mở ảnh xem: **cả 2 đều là vật bị cắt ở mép ảnh** (người đứng sát mép trái; mui xe lấp ló ở mép dưới) — nhãn đúng, tức **2 báo động giả**.
+- **Bài học / việc tiếp theo:** tỉ lệ khung hình cực đoan chủ yếu đến từ vật bị cắt ở mép, nên một bản tốt hơn nên bỏ qua (hoặc hạ trọng số) box chạm mép ảnh. Vì vậy check này chỉ nên là **cảnh báo** cho người, không được tự sửa/xoá box.
