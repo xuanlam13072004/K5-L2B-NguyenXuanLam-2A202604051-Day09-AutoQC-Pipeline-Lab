@@ -48,7 +48,24 @@ Sweep trên `data/calib/` (39 ảnh, có đáp án `MANIFEST.csv`), file `submis
 3. **Model lớn cũng sai, nên ý kiến thứ hai không phải sự thật.** Sau khi người duyệt **thay hẳn bằng nhãn người**, vẫn còn ảnh bị cờ: `img_0121`, `img_0183`, `img_0199`… vẫn `POSSIBLE_MISSING` (model thấy "person" conf 0,7–0,8 mà nhãn người không gán: người rất nhỏ/xa, guideline bỏ qua); `img_0078`, `img_0083` vẫn `POSSIBLE_WRONG_CLASS` (model nói car). Trên calib, `POSSIBLE_FALSE_POS` chỉ có precision 0,31. Ngược lại, nhầm lớp mà **model cũng nhầm** (truck/bus giống nhau) thì không có cờ nào.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-**Chưa chạy.** Tôi ưu tiên hoàn thành phần lõi (pipeline, calibration, báo cáo) trong thời lượng lab; phần train trên Colab để làm sau nếu còn thời gian. Vì chưa có số liệu nên **không đưa ra kết luận** "clean tốt hơn raw". Lưu ý cho lần train: bản `clean_v1` hiện là bản **Hold** (38 ảnh còn cảnh báo chưa duyệt), và `raw` chứa 5 ảnh trùng tập test, nên mAP của `raw` có thể bị thổi phồng.
+Cấu hình (giống hệt cho 2 biến thể): `yolo26n.pt`, 20 epoch, batch 16, imgsz 640, Colab T4, **2 seed (0, 1)**, cùng val `gold_val` (40 ảnh) và cùng test (100 ảnh). `clean` = `submission/export/clean_v1` (manifest_sha1 `bb2ba54…`, cùng config_sha1 `6af2dc9…` với lần chạy pipeline). Bảng do `scripts/summarize_results.py` sinh (`submission/results/comparison.md`):
+
+| biến thể | #ảnh train | số seed | map50 (TB ± độ lệch) | map50_95 (TB ± độ lệch) | precision (TB ± độ lệch) | recall (TB ± độ lệch) |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 202 | 2 | 0.701 ± 0.025 | 0.487 ± 0.008 | 0.759 ± 0.003 | 0.625 ± 0.019 |
+
+**So với nhiễu.** Chênh mAP50 (clean − raw) = **−0,025**, bằng đúng độ lệch giữa 2 seed của `clean` (0,025; seed 0 = 0,718, seed 1 = 0,683): seed tốt của `clean` chỉ kém `raw` 0,008. Với mAP50-95 chênh −0,024, lớn hơn độ lệch seed (0,004 / 0,008), nhưng chỉ có **2 seed** nên ước lượng độ lệch rất thô. AP50 theo lớp: car và person gần như bằng nhau (car 0,74/0,74 vs 0,75/0,72; person 0,82/0,83 vs 0,81/0,83), bus ngang nhau (0,73/0,68 vs 0,68/0,71); khác biệt chủ yếu ở **truck** (clean 0,59/0,49 vs raw 0,66/0,64).
+
+**Kết luận trung thực:** số liệu **không** ủng hộ "clean tốt hơn raw"; trên test hiện tại `raw` nhỉnh hơn một chút, nhưng phần lớn chênh lệch nằm trong biên độ dao động giữa các seed. Tôi **chưa kết luận được** pipeline làm model tốt lên hay xấu đi.
+
+**Giả thuyết và cách kiểm:**
+1. **Rò rỉ test làm điểm `raw` bị thổi phồng.** Pipeline phát hiện 5 ảnh `LEAK_TEST` trong raw (trùng `test_009`, `test_033`, `test_039`, `test_044`, `test_085`): `raw` được train trên chính 5 ảnh test đó, `clean` thì không. *Kiểm:* đánh giá lại cả 2 model trên test bỏ 5 ảnh này, hoặc train thêm biến thể raw chỉ loại 5 ảnh rò rỉ.
+2. **`raw` có nhiều ảnh hơn (224 vs 202).** 12 ảnh trùng/gần trùng và 5 ảnh rò rỉ làm tăng số lượt nhìn thấy cùng vật; còn lỗi cú pháp của raw ít gây hại vì Ultralytics tự bỏ dòng/ảnh hỏng khi load (xem cảnh báo ở ô train của notebook). *Kiểm:* đếm số ảnh/box Ultralytics thực sự dùng cho `raw` trong log.
+3. **Lớp truck ít mẫu, nhãn thay đổi nhiều.** Sau người duyệt, số box truck đổi từ 32 (raw) lên 41 (clean, `class_stats.csv`) do sửa car↔truck; test 100 ảnh có ít truck nên AP truck dao động mạnh (riêng `clean` đã chênh 0,10 giữa 2 seed). *Kiểm:* đếm truck trong test, xem ma trận nhầm lẫn car/truck.
+4. **`clean_v1` là bản Hold:** 38 ảnh còn cảnh báo chưa người xem (nhãn máy có thể còn sai).
+
+**Việc tiếp theo:** chạy ≥ 3–5 seed; thêm biến thể `oracle` làm chặn trên; đánh giá trên test đã bỏ ảnh rò rỉ; duyệt nốt 38 ảnh còn cảnh báo rồi train lại.
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định: HOLD.** Dataset sạch lỗi bắt buộc nhưng chưa đủ điều kiện phát hành. Để thành **Release** cần: duyệt thêm tối thiểu **18** trong 38 ảnh còn cảnh báo (để tỉ lệ < 10%, tức ≤ 20/202 ảnh), ưu tiên 12 ảnh `POSSIBLE_MISSING` và 3 ảnh `POSSIBLE_WRONG_CLASS` còn lại; hoặc tăng ngân sách duyệt cho lô sau. **Không** hạ `second_opinion.conf` lên 0,8 chỉ để đạt Release (§3).
@@ -63,3 +80,10 @@ Sweep trên `data/calib/` (39 ảnh, có đáp án `MANIFEST.csv`), file `submis
 - Vì `pipeline/checks/__init__.py` và `configs/pipeline.yaml` là file bị khoá, check **chạy độc lập**, không nằm trong `QC_CHECKS`: `python -m pipeline.checks.aspect_ratio <thư mục dataset> <file csv>`.
 - **Kết quả:** `data/raw`: 3 box ở 3 ảnh (`img_0042`, `img_0076`, `img_0155`, đều là person rộng/cao ≈ 0,10). Sau pipeline (`work/run/ds`, 202 ảnh): 2 box — `img_0042` dòng 5 (person, 0,10) và `img_0124` dòng 6 (car, 9,11; box do người duyệt gán). Mở ảnh xem: **cả 2 đều là vật bị cắt ở mép ảnh** (người đứng sát mép trái; mui xe lấp ló ở mép dưới) — nhãn đúng, tức **2 báo động giả**.
 - **Bài học / việc tiếp theo:** tỉ lệ khung hình cực đoan chủ yếu đến từ vật bị cắt ở mép, nên một bản tốt hơn nên bỏ qua (hoặc hạ trọng số) box chạm mép ảnh. Vì vậy check này chỉ nên là **cảnh báo** cho người, không được tự sửa/xoá box.
+
+## Thưởng: CVAT (+2)
+- Project `Day09` (4 nhãn car, person, truck, bus, thuộc tính `can_review`), task `review-top20`: **25 ảnh** = 20 ảnh đầu `05_review_queue.csv` + 5 ảnh có `BOX_TINY`, nhãn sau pipeline import dạng **YOLO 1.1**. Ảnh chụp: `submission/cvat/01_project_labels.png` … `04_can_review.png`.
+- Lọc `Width < 20` (px): khớp **9 ảnh** — `img_0026` (6 box), `img_0020`, `img_0030`, `img_0051`, `img_0161` (3 box mỗi ảnh), `img_0135`, `img_0069` (2), `img_0053`, `img_0183` (1); lọc `Height < 20` thêm 3 ảnh `img_0031` (3), `img_0219`, `img_0078` (2) — tổng 12 ảnh có box < 20 px. Ví dụ `img_0020`: box person #7 kích thước 16,3 × 48,2 px.
+- **Đối chiếu `BOX_TINY` của pipeline:** trong 12 ảnh đó pipeline chỉ cờ 5 (`img_0026`, `img_0051`, `img_0069`, `img_0161`, `img_0183`) vì ngưỡng dự án là **12 px theo cạnh ngắn**, còn bộ lọc slide là **20 px**. Box như person 16 px ở `img_0020` hợp lệ theo guideline nên pipeline không cờ, CVAT thì lọc ra — đúng vai trò "máy kiểm quy tắc, người xem ca biên".
+- **`can_review`:** người gán bật thuộc tính này cho box mình không chắc (vật bị che, mờ, quá nhỏ) để người khác duyệt lại; pipeline làm việc tương tự bằng cảnh báo WARN (`BOX_TINY`, `POSSIBLE_*`) được xếp vào `05_review_queue.csv`.
+- Lỗi gặp khi tạo nhãn: CVAT từ chối `cvat/labels.json` của đề (`can_review: attribute values must be a non-empty array`) → sửa bằng `values: ["false"]` cho thuộc tính checkbox.
