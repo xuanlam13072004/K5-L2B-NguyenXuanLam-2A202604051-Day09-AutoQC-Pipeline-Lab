@@ -1,4 +1,4 @@
-# Báo cáo Day 09 — Nguyễn Xuân Lâm, 2A202604051
+# Báo cáo Day 09 — Nguyễn Xuân Lam, 2A202604051
 
 > Mọi số liệu lấy từ `submission/reports/` (lần chạy `python -m pipeline.run` với `phash_dist=12`, `second_opinion.conf=0.6`) và `submission/calibration/`.
 
